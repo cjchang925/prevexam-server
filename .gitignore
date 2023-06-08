@@ -1,0 +1,11 @@
+/files
+/node_modules
+/pastexam
+
+test.js
+package-lock.json
+upload_history.log
+user_history.log
+.env
+Dockerfile
+.dockerignore
