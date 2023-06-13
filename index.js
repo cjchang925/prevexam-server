@@ -1,8 +1,6 @@
 const express = require('express');
 const app = express();
 
-const axios = require('axios');
-
 app.listen(3001, () => { console.log('Server is listening to port 3001 ...') })
 
 const mysql = require('mysql')
@@ -218,6 +216,7 @@ var storage = multer.diskStorage({
 var upload = multer({ storage: storage })
 
 const nameReg = new RegExp('.(txt|pdf|zip|rar|7z|jpg|png|jpeg|mp4|mov)$')
+const emailReg = /@nycu\.edu\.tw$/
 
 app.post('/api/user-upload-file', upload.single("files"), (req, res) => {
     let user = {};
@@ -230,7 +229,7 @@ app.post('/api/user-upload-file', upload.single("files"), (req, res) => {
         }
     }
 
-    if (!found || typeof user.email === "undefined" || !req.cookies) {
+    if (!found || typeof user.email === "undefined" || !req.cookies || !emailReg.test(user.email)) {
         res.send({ message: "Invalid user!" })
         return;
     }
@@ -284,7 +283,7 @@ app.post("/api/login", async (req, res) => {
     DB = DB.filter((ele) => {
         return ele.id !== user.id;
     })
-    await DB.push(user);
+    DB.push(user);
     let allName = [];
     for (var i = 0; i < DB.length; i++) {
         allName.push(DB[i].family_name + DB[i].given_name);
@@ -331,83 +330,3 @@ app.get('/api/clear-login-array', (req, res) => {
     DB.length = 0
     res.status(200).send('Success!')
 })
-
-app.get('/api/getAccessToken', async (req, res) => {
-    const code = req.query.code;
-
-    const params = new URLSearchParams();
-    params.append('client_id', CLIENT_ID);
-    params.append('client_secret', CLIENT_SECRET);
-    params.append('code', code);
-
-    try {
-        const response = await axios.post('https://github.com/login/oauth/access_token', params, {
-            headers: {
-                Accept: 'application/json'
-            }
-        })
-
-        const user = await axios.get('https://api.github.com/user', {
-            headers: {
-                Authorization: `Bearer ${response.data.access_token}`,
-                Accept: 'application/json'
-            }
-        })
-
-        fs.appendFile('/home/node/intern_login.log', 'GitHub username: ' + user.data.login + '\n', (err) => {
-            if (err) {
-                console.log(err);
-            }
-        })
-
-        res.json({
-            username: user.data.login,
-            access_token: response.data.access_token
-        });
-    } catch (error) {
-        // console.error(error);
-        res.status(500).json({
-            error: 'Internal server error'
-        });
-    }
-});
-
-app.get('/api/getAccessTokenLocal', async (req, res) => {
-    const code = req.query.code;
-
-    const params = new URLSearchParams();
-    params.append('client_id', '4054e0560380c0e7f341');
-    params.append('client_secret', 'f9d19db878ea5ede4660e8e2a9186868ab72dce4');
-    params.append('code', code);
-
-    try {
-        const response = await axios.post('https://github.com/login/oauth/access_token', params, {
-            headers: {
-                Accept: 'application/json'
-            }
-        })
-
-        const user = await axios.get('https://api.github.com/user', {
-            headers: {
-                Authorization: `Bearer ${response.data.access_token}`,
-                Accept: 'application/json'
-            }
-        })
-
-        fs.appendFile('/home/node/intern_login_local.log', 'GitHub username: ' + user.data.login + '\n', (err) => {
-            if (err) {
-                console.log(err);
-            }
-        })
-
-        res.json({
-            username: user.data.login,
-            access_token: response.data.access_token
-        });
-    } catch (error) {
-        // console.error(error);
-        res.status(500).json({
-            error: 'Internal server error'
-        });
-    }
-});
