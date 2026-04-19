@@ -1,332 +1,429 @@
 const express = require('express');
+const mysql = require('mysql2');
+const cors = require('cors');
+const cookieParser = require('cookie-parser');
+const fs = require('fs');
+const readline = require('readline');
+const multer = require('multer');
+const path = require('path');
+
 const app = express();
 
-app.listen(3001, () => { console.log('Server is listening to port 3001 ...') })
-
-const mysql = require('mysql')
-
-const cors = require('cors')
-
-const cookieParser = require('cookie-parser');
-app.use(cookieParser())
-const corsConfig = {
-    credentials: true,
-    origin: '*'
-};
-
-app.use(cors(corsConfig));
+app.use(cookieParser());
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.set('trust proxy', true)
+app.set('trust proxy', true);
 
-const db = mysql.createConnection({
+// MySQL connection with retry logic
+let db;
+let serverStarted = false;
+const MAX_RETRIES = 10;
+const RETRY_DELAY = 5000; // 5 seconds
+
+function createDatabaseConnection(retries = 0) {
+  db = mysql.createConnection({
     host: "mysql",
     user: "root",
     password: "password",
     database: "prevexamdb",
     port: 3306,
-});
+  });
 
-app.get('/api/get-one-data', (req, res) => {
-    db.query("SELECT * FROM one_files", (err, result) => {
-        if (err) {
-            console.log(err);
-        } else {
-            let json = JSON.parse(JSON.stringify(result))
-            var back = []
-            for (const key in json) {
-                back.push([json[key].subject, json[key].professor, json[key].year, json[key].exam_type, json[key].file_extension, json[key].original_filename, json[key].file_path])
-            }
-            res.send(back)
-        }
-    });
-})
-
-app.get('/api/get-two-data', (req, res) => {
-    db.query("SELECT * FROM two_files", (err, result) => {
-        if (err) {
-            console.log(err);
-        } else {
-            let json = JSON.parse(JSON.stringify(result))
-            var back = []
-            for (const key in json) {
-                back.push([json[key].subject, json[key].professor, json[key].year, json[key].exam_type, json[key].file_extension, json[key].original_filename, json[key].file_path])
-            }
-            res.send(back)
-        }
-    });
-})
-
-app.get('/api/get-advance-data', (req, res) => {
-    db.query("SELECT * FROM advance_files", (err, result) => {
-        if (err) {
-            console.log(err);
-        } else {
-            let json = JSON.parse(JSON.stringify(result))
-            var back = []
-            for (const key in json) {
-                back.push([json[key].subject, json[key].professor, json[key].year, json[key].exam_type, json[key].file_extension, json[key].original_filename, json[key].file_path])
-            }
-            res.send(back)
-        }
-    });
-})
-
-app.get('/api/get-other-data', (req, res) => {
-    db.query("SELECT * FROM other_files", (err, result) => {
-        if (err) {
-            console.log(err);
-        } else {
-            let json = JSON.parse(JSON.stringify(result))
-            var back = []
-            for (const key in json) {
-                back.push([json[key].subject, json[key].professor, json[key].year, json[key].exam_type, json[key].file_extension, json[key].original_filename, json[key].file_path])
-            }
-            res.send(back)
-        }
-    });
-})
-
-const fs = require('fs');
-const readline = require('readline')
-
-var counter = 0
-
-app.get('/api/upload-one-data', (req, res) => {
-    const text = fs.createReadStream('/home/ece-learn/src/csv_file/test.txt', "utf-8")
-    const rl = readline.createInterface({
-        input: text,
-    })
-
-    rl.on("line", (res) => {
-        const arr = res.split(',')
-        fs.copyFile('/home/node/pastexam/' + arr[6], '/home/node/files/' + counter.toString() + '.' + arr[4], function (err) {
-            if (err) console.log(err)
-            console.log('Successfully copied with id ' + counter.toString())
-        })
-        const path = 'files/' + counter.toString() + '.' + arr[4]
-        const sql = `INSERT INTO one_files (subject, professor, year, exam_type, file_extension, original_filename, file_path) VALUES (\"${arr[0]}\", \"${arr[1]}\", \"${arr[2]}\", \"${arr[3]}\", \"${arr[4]}\", \"${arr[5]}\", \"${path}\")`
-        db.query(sql, (err, result) => {
-            if (err) {
-                console.log(err);
-            }
+  db.connect((err) => {
+    if (err) {
+      console.error(`Error connecting to MySQL (attempt ${retries + 1}/${MAX_RETRIES}):`, err.message);
+      
+      if (retries < MAX_RETRIES) {
+        console.log(`Retrying in ${RETRY_DELAY/1000} seconds...`);
+        setTimeout(() => createDatabaseConnection(retries + 1), RETRY_DELAY);
+      } else {
+        console.error('Max retries reached. Exiting...');
+        process.exit(1);
+      }
+    } else {
+      console.log('Connected to MySQL database successfully');
+      
+      // Start the server only after successful database connection
+      if (!serverStarted) {
+        app.listen(3001, () => {
+          console.log('Server is listening to port 3001...');
+          serverStarted = true;
         });
+      }
+    }
+  });
 
-        counter++;
-    })
-    res.redirect('/')
-})
-
-app.get('/api/upload-two-data', (req, res) => {
-    const text = fs.createReadStream('/home/ece-learn/src/csv_file/test.txt', "utf-8")
-    const rl = readline.createInterface({
-        input: text,
-    })
-
-    rl.on("line", (res) => {
-        const arr = res.split(',')
-        fs.copyFile('/home/node/pastexam/' + arr[6], '/home/node/files/' + counter.toString() + '.' + arr[4], function (err) {
-            if (err) console.log(err)
-            console.log('Successfully copied with id ' + counter.toString())
-        })
-        const path = 'files/' + counter.toString() + '.' + arr[4]
-        const sql = `INSERT INTO two_files (subject, professor, year, exam_type, file_extension, original_filename, file_path) VALUES (\"${arr[0]}\", \"${arr[1]}\", \"${arr[2]}\", \"${arr[3]}\", \"${arr[4]}\", \"${arr[5]}\", \"${path}\")`
-        db.query(sql, (err, result) => {
-            if (err) {
-                console.log(err);
-            }
-        });
-
-        counter++;
-    })
-    res.redirect('/')
-})
-
-app.get('/api/upload-advance-data', (req, res) => {
-    const text = fs.createReadStream('/home/ece-learn/src/csv_file/test.txt', "utf-8")
-    const rl = readline.createInterface({
-        input: text,
-    })
-
-    rl.on("line", (res) => {
-        const arr = res.split(',')
-        fs.copyFile('/home/node/pastexam/' + arr[6], '/home/node/files/' + counter.toString() + '.' + arr[4], function (err) {
-            if (err) console.log(err)
-            console.log('Successfully copied with id ' + counter.toString())
-        })
-        const path = 'files/' + counter.toString() + '.' + arr[4]
-        const sql = `INSERT INTO advance_files (subject, professor, year, exam_type, file_extension, original_filename, file_path) VALUES (\"${arr[0]}\", \"${arr[1]}\", \"${arr[2]}\", \"${arr[3]}\", \"${arr[4]}\", \"${arr[5]}\", \"${path}\")`
-        db.query(sql, (err, result) => {
-            if (err) {
-                console.log(err);
-            }
-        });
-
-        counter++;
-    })
-    res.redirect('/')
-})
-
-app.get('/api/upload-other-data', (req, res) => {
-    const text = fs.createReadStream('/home/ece-learn/src/csv_file/test.txt', "utf-8")
-    const rl = readline.createInterface({
-        input: text,
-    })
-
-    rl.on("line", (res) => {
-        const arr = res.split(',')
-        fs.copyFile('/home/node/pastexam/' + arr[6], '/home/node/files/' + counter.toString() + '.' + arr[4], function (err) {
-            if (err) console.log(err)
-            console.log('Successfully copied with id ' + counter.toString())
-        })
-        const path = 'files/' + counter.toString() + '.' + arr[4]
-        const sql = `INSERT INTO other_files (subject, professor, year, exam_type, file_extension, original_filename, file_path) VALUES (\"${arr[0]}\", \"${arr[1]}\", \"${arr[2]}\", \"${arr[3]}\", \"${arr[4]}\", \"${arr[5]}\", \"${path}\")`
-        db.query(sql, (err, result) => {
-            if (err) {
-                console.log(err);
-            }
-        });
-
-        counter++;
-    })
-    res.redirect('/')
-})
-
-const multer = require("multer");
-const path = require('path');
-
-const getRandom = (max) => {
-    return Math.random() * max
+  // Handle MySQL connection loss
+  db.on('error', (err) => {
+    console.error('MySQL error:', err);
+    if (err.code === 'PROTOCOL_CONNECTION_LOST') {
+      console.error('Database connection lost. Attempting to reconnect...');
+      createDatabaseConnection(0);
+    } else {
+      throw err;
+    }
+  });
 }
 
-var nowFileName = ""
+// Initialize database connection
+createDatabaseConnection();
 
-var storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, 'files/')
-    },
-    filename: (req, file, cb) => {
-        let randomStr = new Date().toJSON().slice(0, 19).replaceAll(':', '-')
-        randomStr += Math.floor(getRandom(999999)).toString()
-        nowFileName = randomStr + path.extname(file.originalname)
-        cb(null, nowFileName)
+// Helper function to transform query results
+const transformFileResults = (results) => {
+  return results.map(row => [
+    row.subject,
+    row.professor,
+    row.year,
+    row.exam_type,
+    row.file_extension,
+    row.original_filename,
+    row.file_path
+  ]);
+};
+
+// Helper function to get data from a specific table
+const getDataFromTable = (tableName, res) => {
+  const sql = `SELECT * FROM ??`;
+  db.query(sql, [tableName], (err, result) => {
+    if (err) {
+      console.error(`Error fetching data from ${tableName}:`, err);
+      return res.status(500).json({ error: 'Database error' });
     }
-})
+    res.json(transformFileResults(result));
+  });
+};
 
-var upload = multer({ storage: storage })
+app.get('/api/get-one-data', (req, res) => {
+  getDataFromTable('one_files', res);
+});
 
-const nameReg = new RegExp('.(txt|pdf|zip|rar|7z|jpg|png|jpeg|mp4|mov)$')
-const emailReg = /@nycu\.edu\.tw$/
+app.get('/api/get-two-data', (req, res) => {
+  getDataFromTable('two_files', res);
+});
 
-app.post('/api/user-upload-file', upload.single("files"), (req, res) => {
-    let user = {};
-    let found = false;
-    for (var i = 0; i < DB.length; i++) {
-        if (req.cookies.token === DB[i].id) {
-            user = DB[i];
-            found = true;
-            break;
-        }
-    }
+app.get('/api/get-advance-data', (req, res) => {
+  getDataFromTable('advance_files', res);
+});
 
-    if (!found || typeof user.email === "undefined" || !req.cookies || !emailReg.test(user.email)) {
-        res.send({ message: "Invalid user!" })
-        return;
-    }
+app.get('/api/get-other-data', (req, res) => {
+  getDataFromTable('other_files', res);
+});
 
-    fs.appendFile('/home/node/upload_history.log', 'Filename: ' + nowFileName + ' grade: ' + req.query.grade.replaceAll(/\s/g, '') +
-        ' subject: ' + req.query.subject.replaceAll(/\s/g, '') + ' teacher: ' + req.query.teacher.replaceAll(/\s/g, '') + ' year: ' + req.query.year.replaceAll(/\s/g, '') + ' from '
-        + user.family_name + user.given_name + ' email: ' + user.email + '\r\n', (err) => {
-            if (err) {
-                console.log(err);
-            }
-            else {
-                console.log("Appended file successfully!")
-            }
-        })
+let counter = 0;
 
-    if (!nameReg.test(req.query.filename.replaceAll(/\s/g, ''))) {
-        console.log('invalid file')
-        res.send({ message: "Invalid file!" })
-        return
-    }
+// Helper function to process CSV upload
+const processCSVUpload = async (tableName, req, res) => {
+  const csvPath = '/home/ece-learn/src/csv_file/test.txt';
+  const sourcePath = '/home/node/pastexam/';
+  const destPath = '/home/node/files/';
 
-    const filePath = 'files/' + nowFileName
-    var sql = ""
-    const fullYear = req.query.year.replaceAll(/\s/g, '') + '學年'
-    if (req.query.grade.replaceAll(/\s/g, '') === "大一") {
-        sql = `INSERT INTO one_files (subject, professor, year, exam_type, file_extension, original_filename, file_path) VALUES (\"${req.query.subject.replaceAll(/\s/g, '')}\", \"${req.query.teacher.replaceAll(/\s/g, '')}\", \"${fullYear}\", \"${req.query.type.replaceAll(/\s/g, '')}\", \"${path.extname(req.query.filename.replaceAll(/\s/g, '')).slice(1,)}\", \"${req.query.filename.replaceAll(/\s/g, '')}\", \"${filePath}\")`
-    }
-    if (req.query.grade.replaceAll(/\s/g, '') === "大二") {
-        sql = `INSERT INTO two_files (subject, professor, year, exam_type, file_extension, original_filename, file_path) VALUES (\"${req.query.subject.replaceAll(/\s/g, '')}\", \"${req.query.teacher.replaceAll(/\s/g, '')}\", \"${fullYear}\", \"${req.query.type.replaceAll(/\s/g, '')}\", \"${path.extname(req.query.filename.replaceAll(/\s/g, '')).slice(1,)}\", \"${req.query.filename.replaceAll(/\s/g, '')}\", \"${filePath}\")`
-    }
-    if (req.query.grade.replaceAll(/\s/g, '') === "大三以上選修") {
-        sql = `INSERT INTO advance_files (subject, professor, year, exam_type, file_extension, original_filename, file_path) VALUES (\"${req.query.subject.replaceAll(/\s/g, '')}\", \"${req.query.teacher.replaceAll(/\s/g, '')}\", \"${fullYear}\", \"${req.query.type.replaceAll(/\s/g, '')}\", \"${path.extname(req.query.filename.replaceAll(/\s/g, '')).slice(1,)}\", \"${req.query.filename.replaceAll(/\s/g, '')}\", \"${filePath}\")`
-    }
-    if (req.query.grade.replaceAll(/\s/g, '') === "通識與其他") {
-        sql = `INSERT INTO other_files (subject, professor, year, exam_type, file_extension, original_filename, file_path) VALUES (\"${req.query.subject.replaceAll(/\s/g, '')}\", \"${req.query.teacher.replaceAll(/\s/g, '')}\", \"${fullYear}\", \"${req.query.type.replaceAll(/\s/g, '')}\", \"${path.extname(req.query.filename.replaceAll(/\s/g, '')).slice(1,)}\", \"${req.query.filename.replaceAll(/\s/g, '')}\", \"${filePath}\")`
-    }
-
-    db.query(sql, (err, result) => {
-        if (err) {
-            console.log(err);
-        }
+  try {
+    const fileStream = fs.createReadStream(csvPath, 'utf-8');
+    const rl = readline.createInterface({
+      input: fileStream,
+      crlfDelay: Infinity
     });
 
-    res.status(200).send({ message: "Success!" })
-})
+    const promises = [];
+
+    rl.on('line', (line) => {
+      const arr = line.split(',');
+
+      // Validate array has enough elements
+      if (arr.length < 7) {
+        console.error('Invalid CSV line format:', line);
+        return;
+      }
+
+      const fileExtension = arr[4];
+      const sourceFile = arr[6];
+      const destFileName = `${counter}.${fileExtension}`;
+      const destFilePath = `${destPath}${destFileName}`;
+      const dbPath = `files/${destFileName}`;
+
+      // Create promise for file copy
+      const copyPromise = new Promise((resolve, reject) => {
+        fs.copyFile(`${sourcePath}${sourceFile}`, destFilePath, (err) => {
+          if (err) {
+            console.error('Error copying file:', err);
+            reject(err);
+          } else {
+            console.log('Successfully copied file with id', counter);
+            resolve();
+          }
+        });
+      });
+
+      // Create promise for database insert with parameterized query
+      const dbPromise = new Promise((resolve, reject) => {
+        const sql = `INSERT INTO ?? (subject, professor, year, exam_type, file_extension, original_filename, file_path) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+        db.query(sql, [tableName, arr[0], arr[1], arr[2], arr[3], arr[4], arr[5], dbPath], (err, result) => {
+          if (err) {
+            console.error('Database insert error:', err);
+            reject(err);
+          } else {
+            resolve(result);
+          }
+        });
+      });
+
+      promises.push(Promise.all([copyPromise, dbPromise]));
+      counter++;
+    });
+
+    rl.on('close', async () => {
+      try {
+        await Promise.all(promises);
+        res.redirect('/');
+      } catch (error) {
+        console.error('Error processing uploads:', error);
+        res.status(500).json({ error: 'Upload processing failed' });
+      }
+    });
+
+    rl.on('error', (error) => {
+      console.error('Error reading CSV file:', error);
+      res.status(500).json({ error: 'Failed to read CSV file' });
+    });
+
+  } catch (error) {
+    console.error('Error in processCSVUpload:', error);
+    res.status(500).json({ error: 'Upload failed' });
+  }
+};
+
+app.get('/api/upload-one-data', (req, res) => {
+  processCSVUpload('one_files', req, res);
+});
+
+app.get('/api/upload-two-data', (req, res) => {
+  processCSVUpload('two_files', req, res);
+});
+
+app.get('/api/upload-advance-data', (req, res) => {
+  processCSVUpload('advance_files', req, res);
+});
+
+app.get('/api/upload-other-data', (req, res) => {
+  processCSVUpload('other_files', req, res);
+});
+
+const getRandom = (max) => {
+  return Math.floor(Math.random() * max);
+};
+
+let nowFileName = '';
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'files/');
+  },
+  filename: (req, file, cb) => {
+    let randomStr = new Date().toJSON().slice(0, 19).replaceAll(':', '-');
+    randomStr += getRandom(999999).toString().padStart(6, '0');
+    nowFileName = randomStr + path.extname(file.originalname);
+    cb(null, nowFileName);
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 50 * 1024 * 1024 // 50MB limit
+  }
+});
+
+const nameReg = /\.(txt|pdf|zip|rar|7z|jpe?g|png|mp4|mov|heic)$/i;
+const emailReg = /@nycu\.edu\.tw$/;
+app.get('/api/test', (req, res) => {
+  console.log('Call API');
+  res.status(200).end();
+});
+
+// Helper function to find user by token
+const findUserByToken = (token) => {
+  return DB.find(user => user.id === token);
+};
+
+// Helper function to sanitize input
+const sanitizeInput = (input) => {
+  return input ? input.replaceAll(/\s/g, '') : '';
+};
+
+// Grade to table mapping
+const gradeTableMap = {
+  '大一': 'one_files',
+  '大二': 'two_files',
+  '大三以上選修': 'advance_files',
+  '通識與其他': 'other_files'
+};
+
+app.post('/api/user-upload-file', upload.single('files'), async (req, res) => {
+  try {
+    // Validate request
+    if (!req.cookies || !req.cookies.token) {
+      return res.status(401).json({ message: 'No authentication token' });
+    }
+
+    // Validate file was uploaded
+    if (!req.file) {
+      return res.status(400).json({ message: 'No file uploaded' });
+    }
+
+    // Find and validate user
+    const user = findUserByToken(req.cookies.token);
+    if (!user || !user.email || !emailReg.test(user.email)) {
+      // Delete uploaded file if user is invalid
+      fs.unlink(req.file.path, (err) => {
+        if (err) console.error('Error deleting invalid upload:', err);
+      });
+      return res.status(401).json({ message: 'Invalid user!' });
+    }
+
+    console.log('Valid user and ready to upload');
+
+    // Validate required fields
+    if (!req.body.filename || !req.body.grade || !req.body.subject ||
+      !req.body.teacher || !req.body.year || !req.body.type) {
+      fs.unlink(req.file.path, (err) => {
+        if (err) console.error('Error deleting invalid upload:', err);
+      });
+      return res.status(400).json({ message: 'Missing required fields' });
+    }
+
+    // Sanitize inputs
+    const grade = sanitizeInput(req.body.grade);
+    const subject = sanitizeInput(req.body.subject);
+    const teacher = sanitizeInput(req.body.teacher);
+    const year = sanitizeInput(req.body.year);
+    const type = sanitizeInput(req.body.type);
+    const filename = sanitizeInput(req.body.filename);
+
+    // Validate filename extension
+    if (!nameReg.test(filename)) {
+      console.log('Invalid file extension');
+      fs.unlink(req.file.path, (err) => {
+        if (err) console.error('Error deleting invalid file:', err);
+      });
+      return res.status(400).json({ message: 'Invalid file!' });
+    }
+
+    // Log upload history
+    const logMessage = `Filename: ${nowFileName} grade: ${grade} subject: ${subject} teacher: ${teacher} year: ${year} from ${user.family_name}${user.given_name} email: ${user.email}\r\n`;
+
+    fs.appendFile('/home/node/upload_history.log', logMessage, (err) => {
+      if (err) {
+        console.error('Error writing to upload history:', err);
+      } else {
+        console.log('Appended file successfully!');
+      }
+    });
+
+    // Determine table based on grade
+    const tableName = gradeTableMap[grade];
+    if (!tableName) {
+      fs.unlink(req.file.path, (err) => {
+        if (err) console.error('Error deleting file:', err);
+      });
+      return res.status(400).json({ message: 'Invalid grade category!' });
+    }
+
+    const filePath = 'files/' + nowFileName;
+    const fullYear = year + '學年';
+    const fileExtension = path.extname(filename).slice(1);
+
+    // Use parameterized query to prevent SQL injection
+    const sql = `INSERT INTO ?? (subject, professor, year, exam_type, file_extension, original_filename, file_path) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+
+    db.query(sql, [tableName, subject, teacher, fullYear, type, fileExtension, filename, filePath], (err) => {
+      if (err) {
+        console.error('Database insert error:', err);
+        // Delete uploaded file on database error
+        fs.unlink(req.file.path, (unlinkErr) => {
+          if (unlinkErr) console.error('Error deleting file after DB error:', unlinkErr);
+        });
+        return res.status(500).json({ message: 'Database error!' });
+      }
+      res.status(200).json({ message: 'Success!' });
+    });
+
+  } catch (error) {
+    console.error('Error in file upload:', error);
+    // Clean up uploaded file on error
+    if (req.file) {
+      fs.unlink(req.file.path, (err) => {
+        if (err) console.error('Error deleting file after error:', err);
+      });
+    }
+    res.status(500).json({ message: 'Error!' });
+  }
+});
 
 let DB = [];
 
-app.post("/api/login", async (req, res) => {
+app.post('/api/login', async (req, res) => {
+  try {
     const user = req.body;
-    DB = DB.filter((ele) => {
-        return ele.id !== user.id;
-    })
-    DB.push(user);
-    let allName = [];
-    for (var i = 0; i < DB.length; i++) {
-        allName.push(DB[i].family_name + DB[i].given_name);
+
+    // Validate user data
+    if (!user || !user.id || !user.email || !user.family_name || !user.given_name) {
+      return res.status(400).json({ error: 'Invalid user data' });
     }
-    fs.appendFile('/home/node/user_history.log', allName.join(', ') + '\r\n', (err) => {
-        if (err) {
-            console.log(err);
-        }
-    })
+
+    // Remove existing user with same ID (replace old session)
+    DB = DB.filter((ele) => ele.id !== user.id);
+
+    // Add new user session
+    DB.push(user);
+
+    // Log all current users
+    const allNames = DB.map(u => `${u.family_name}${u.given_name}`);
+
+    fs.appendFile('/home/node/user_history.log', allNames.join(', ') + '\r\n', (err) => {
+      if (err) {
+        console.error('Error writing to user history:', err);
+      }
+    });
+
     res.header('Access-Control-Allow-Origin', 'http://nginx');
-    res.header('Access-Control-Allow-Credentials', true);
-    res.cookie('token', user.id, { path: '/', signed: false, maxAge: 86400000 });
-    res.status(200).send('Success!');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.cookie('token', user.id, {
+      path: '/',
+      httpOnly: true,
+      maxAge: 86400000, // 24 hours
+      sameSite: 'lax'
+    });
+    res.status(200).json({ message: 'Success!' });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Login failed' });
+  }
 });
 
 app.get('/api/login-status-check', (req, res) => {
-    if (!req.cookies) {
-        res.send({ message: "No record!" });
-        return;
-    }
-    let hasLoginRecord = false;
-    for (var i = 0; i < DB.length; i++) {
-        if (req.cookies.token === DB[i].id) {
-            hasLoginRecord = true
-            break
-        }
-    }
-    if (hasLoginRecord) {
-        res.send({ message: "Has record!" })
-    } else {
-        res.send({ message: "No record!" })
-    }
-})
+  if (!req.cookies || !req.cookies.token) {
+    return res.json({ message: 'No record!' });
+  }
+
+  const hasLoginRecord = DB.some(user => user.id === req.cookies.token);
+
+  if (hasLoginRecord) {
+    res.json({ message: 'Has record!' });
+  } else {
+    res.json({ message: 'No record!' });
+  }
+});
 
 app.get('/api/logout', (req, res) => {
-    DB = DB.filter((ele) => {
-        return ele.id !== req.cookies.token
-    })
-    res.clearCookie('token')
-    res.end()
-})
+  if (req.cookies && req.cookies.token) {
+    DB = DB.filter((ele) => ele.id !== req.cookies.token);
+  }
+  res.clearCookie('token');
+  res.status(200).json({ message: 'Logged out successfully' });
+});
 
 app.get('/api/clear-login-array', (req, res) => {
-    DB.length = 0
-    res.status(200).send('Success!')
-})
+  DB.length = 0;
+  res.status(200).json({ message: 'Success!' });
+});
