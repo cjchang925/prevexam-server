@@ -6,6 +6,8 @@ const fs = require('fs');
 const readline = require('readline');
 const multer = require('multer');
 const path = require('path');
+const crypto = require('crypto');
+const axios = require('axios');
 
 const app = express();
 
@@ -213,8 +215,6 @@ const getRandom = (max) => {
   return Math.floor(Math.random() * max);
 };
 
-let nowFileName = '';
-
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, 'files/');
@@ -222,8 +222,7 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => {
     let randomStr = new Date().toJSON().slice(0, 19).replaceAll(':', '-');
     randomStr += getRandom(999999).toString().padStart(6, '0');
-    nowFileName = randomStr + path.extname(file.originalname);
-    cb(null, nowFileName);
+    cb(null, randomStr + path.extname(file.originalname));
   }
 });
 
@@ -235,15 +234,16 @@ const upload = multer({
 });
 
 const nameReg = /\.(txt|pdf|zip|rar|7z|jpe?g|png|mp4|mov|heic)$/i;
-const emailReg = /@nycu\.edu\.tw$/;
+const emailReg = /@nycu\.edu\.tw$/i;
 app.get('/api/test', (req, res) => {
   console.log('Call API');
   res.status(200).end();
 });
 
-// Helper function to find user by token
+// Helper function to find the signed-in user by session token
 const findUserByToken = (token) => {
-  return DB.find(user => user.id === token);
+  const session = DB.find((ele) => ele.token === token);
+  return session && session.user;
 };
 
 // Helper function to sanitize input
@@ -310,7 +310,8 @@ app.post('/api/user-upload-file', upload.single('files'), async (req, res) => {
     }
 
     // Log upload history
-    const logMessage = `Filename: ${nowFileName} grade: ${grade} subject: ${subject} teacher: ${teacher} year: ${year} from ${user.family_name}${user.given_name} email: ${user.email}\r\n`;
+    const storedFileName = req.file.filename;
+    const logMessage = `Filename: ${storedFileName} grade: ${grade} subject: ${subject} teacher: ${teacher} year: ${year} from ${user.family_name || ''}${user.given_name || ''} email: ${user.email}\r\n`;
 
     fs.appendFile('/home/node/upload_history.log', logMessage, (err) => {
       if (err) {
@@ -329,7 +330,7 @@ app.post('/api/user-upload-file', upload.single('files'), async (req, res) => {
       return res.status(400).json({ message: 'Invalid grade category!' });
     }
 
-    const filePath = 'files/' + nowFileName;
+    const filePath = 'files/' + storedFileName;
     const fullYear = year + '學年';
     const fileExtension = path.extname(filename).slice(1);
 
@@ -360,35 +361,58 @@ app.post('/api/user-upload-file', upload.single('files'), async (req, res) => {
   }
 });
 
+// In-memory sessions: [{ token, user }]
 let DB = [];
+
+const GOOGLE_USERINFO_URL = 'https://www.googleapis.com/oauth2/v1/userinfo';
 
 app.post('/api/login', async (req, res) => {
   try {
-    const user = req.body;
-
-    // Validate user data
-    if (!user || !user.id || !user.email || !user.family_name || !user.given_name) {
-      return res.status(400).json({ error: 'Invalid user data' });
+    const accessToken = req.body && req.body.access_token;
+    if (!accessToken) {
+      return res.status(400).json({ message: 'Missing access token' });
     }
 
-    // Remove existing user with same ID (replace old session)
-    DB = DB.filter((ele) => ele.id !== user.id);
+    // Ask Google who the token belongs to instead of trusting the request body
+    let user;
+    try {
+      const response = await axios.get(GOOGLE_USERINFO_URL, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        timeout: 10000,
+      });
+      user = response.data;
+    } catch (error) {
+      console.error('Google token verification failed:', error.message);
+      return res.status(401).json({ message: 'Invalid Google token' });
+    }
 
-    // Add new user session
-    DB.push(user);
+    if (!user || !user.id || !user.email) {
+      return res.status(400).json({ message: 'Invalid user data' });
+    }
+
+    // Only verified NYCU accounts may sign in
+    if (!user.verified_email || !emailReg.test(user.email)) {
+      return res.status(403).json({ message: 'Invalid user!' });
+    }
+
+    // One session per Google account: replace any previous one
+    DB = DB.filter((ele) => ele.user.id !== user.id);
+    const token = crypto.randomBytes(32).toString('hex');
+    DB.push({ token, user });
 
     res.header('Access-Control-Allow-Origin', 'http://nginx');
     res.header('Access-Control-Allow-Credentials', 'true');
-    res.cookie('token', user.id, {
+    res.cookie('token', token, {
       path: '/',
       httpOnly: true,
+      secure: req.secure,
       maxAge: 86400000, // 24 hours
       sameSite: 'lax'
     });
     res.status(200).json({ message: 'Success!' });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ error: 'Login failed' });
+    res.status(500).json({ message: 'Login failed' });
   }
 });
 
@@ -397,7 +421,7 @@ app.get('/api/login-status-check', (req, res) => {
     return res.json({ message: 'No record!' });
   }
 
-  const hasLoginRecord = DB.some(user => user.id === req.cookies.token);
+  const hasLoginRecord = Boolean(findUserByToken(req.cookies.token));
 
   if (hasLoginRecord) {
     res.json({ message: 'Has record!' });
@@ -408,7 +432,7 @@ app.get('/api/login-status-check', (req, res) => {
 
 app.get('/api/logout', (req, res) => {
   if (req.cookies && req.cookies.token) {
-    DB = DB.filter((ele) => ele.id !== req.cookies.token);
+    DB = DB.filter((ele) => ele.token !== req.cookies.token);
   }
   res.clearCookie('token');
   res.status(200).json({ message: 'Logged out successfully' });
