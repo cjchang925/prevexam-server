@@ -35,7 +35,14 @@ const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50MB
 const app = express();
 
 app.use(cookieParser());
-app.use(cors());
+// Cross-origin browser access only from our own origin(s)
+app.use(cors({
+  origin: (origin, callback) => {
+    // No Origin header = same-origin or non-browser request
+    callback(null, !origin || ALLOWED_ORIGINS.includes(origin));
+  },
+  credentials: true,
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.set('trust proxy', true);
@@ -520,8 +527,6 @@ app.post('/api/login', requireAllowedOrigin, async (req, res) => {
     const token = crypto.randomBytes(32).toString('hex');
     DB.push({ token, user, expiresAt: Date.now() + SESSION_TTL_MS });
 
-    res.header('Access-Control-Allow-Origin', 'http://nginx');
-    res.header('Access-Control-Allow-Credentials', 'true');
     res.cookie('token', token, {
       path: '/',
       httpOnly: true,
