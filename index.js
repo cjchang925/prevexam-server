@@ -377,15 +377,6 @@ app.post('/api/login', async (req, res) => {
     // Add new user session
     DB.push(user);
 
-    // Log all current users
-    const allNames = DB.map(u => `${u.family_name}${u.given_name}`);
-
-    fs.appendFile('/home/node/user_history.log', allNames.join(', ') + '\r\n', (err) => {
-      if (err) {
-        console.error('Error writing to user history:', err);
-      }
-    });
-
     res.header('Access-Control-Allow-Origin', 'http://nginx');
     res.header('Access-Control-Allow-Credentials', 'true');
     res.cookie('token', user.id, {
